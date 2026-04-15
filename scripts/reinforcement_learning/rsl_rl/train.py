@@ -78,7 +78,9 @@ if version.parse(installed_version) < version.parse(RSL_RL_VERSION):
 import logging
 import os
 import time
+import threading
 from datetime import datetime
+from pathlib import Path
 
 import gymnasium as gym
 import torch
@@ -109,6 +111,34 @@ torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = False
+
+
+def _start_wandb_video_uploader(video_dir: str, stop_event: threading.Event, poll_interval_s: float = 2.0):
+    """Continuously upload newly created MP4 videos to the active wandb run."""
+    import wandb
+
+    uploaded_files: set[str] = set()
+    video_path = Path(video_dir)
+
+    while not stop_event.is_set():
+        # Wait until wandb run is initialized by the runner.
+        if wandb.run is None:
+            stop_event.wait(poll_interval_s)
+            continue
+
+        if video_path.exists():
+            for mp4_path in sorted(video_path.glob("*.mp4")):
+                mp4_str = str(mp4_path.resolve())
+                if mp4_str in uploaded_files:
+                    continue
+                try:
+                    wandb.log({"rollout/video": wandb.Video(mp4_str, format="mp4")})
+                    uploaded_files.add(mp4_str)
+                    print(f"[INFO] Uploaded video to wandb: {mp4_str}")
+                except Exception as exc:
+                    logger.warning("Failed to upload %s to wandb: %s", mp4_str, exc)
+
+        stop_event.wait(poll_interval_s)
 
 
 @hydra_task_config(args_cli.task, args_cli.agent)
@@ -181,9 +211,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
 
     # wrap for video recording
+    video_dir = os.path.join(log_dir, "videos", "train")
     if args_cli.video:
         video_kwargs = {
-            "video_folder": os.path.join(log_dir, "videos", "train"),
+            "video_folder": video_dir,
             "step_trigger": lambda step: step % args_cli.video_interval == 0,
             "video_length": args_cli.video_length,
             "disable_logger": True,
@@ -216,8 +247,25 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
 
+    wandb_uploader_stop_event: threading.Event | None = None
+    wandb_uploader_thread: threading.Thread | None = None
+    if args_cli.video and agent_cfg.logger == "wandb":
+        wandb_uploader_stop_event = threading.Event()
+        wandb_uploader_thread = threading.Thread(
+            target=_start_wandb_video_uploader,
+            args=(video_dir, wandb_uploader_stop_event),
+            daemon=True,
+        )
+        wandb_uploader_thread.start()
+
     # run training
-    runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+    try:
+        runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+    finally:
+        if wandb_uploader_stop_event is not None:
+            wandb_uploader_stop_event.set()
+        if wandb_uploader_thread is not None:
+            wandb_uploader_thread.join(timeout=5.0)
 
     print(f"Training time: {round(time.time() - start_time, 2)} seconds")
 

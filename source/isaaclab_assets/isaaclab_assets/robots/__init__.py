@@ -17,6 +17,7 @@ from .cartpole import *
 from .cassie import *
 from .fourier import *
 from .franka import *
+from .articulated_arm_rev2 import *
 from .galbot import *
 from .humanoid import *
 from .humanoid_28 import *
