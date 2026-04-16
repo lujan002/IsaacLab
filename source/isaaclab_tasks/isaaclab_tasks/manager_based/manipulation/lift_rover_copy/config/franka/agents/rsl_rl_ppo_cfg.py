@@ -16,6 +16,7 @@ class LiftCubePPORunnerCfg(RslRlOnPolicyRunnerCfg):
     experiment_name = "franka_lift"
     policy = RslRlPpoActorCriticCfg(
         init_noise_std=1.0,
+        # noise_std_type="log", # Added log to fix the issue with the noise standard deviation being too high?
         actor_obs_normalization=False,
         critic_obs_normalization=False,
         actor_hidden_dims=[256, 128, 64],

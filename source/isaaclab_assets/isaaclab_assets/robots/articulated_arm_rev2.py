@@ -24,7 +24,7 @@ ARTICULATED_ARM_REV2_CFG = ArticulationCfg(
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
             # Should be False for the arm to be able to move freely, the rover arm geometry is not compatible with self-collisions
-            enabled_self_collisions=False, solver_position_iteration_count=8, solver_velocity_iteration_count=0
+            enabled_self_collisions=True, solver_position_iteration_count=8, solver_velocity_iteration_count=0
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(

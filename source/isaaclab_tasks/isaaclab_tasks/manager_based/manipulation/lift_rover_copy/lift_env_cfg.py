@@ -133,9 +133,9 @@ class ObservationsCfg:
         joint_pos = ObsTerm(func=mdp.joint_pos)
         joint_vel = ObsTerm(func=mdp.joint_vel)
         # Original (robot-root-frame object position), can produce NaNs if robot root pose is invalid:
-        object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
+        # object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame)
         # Use object position in world/env frame for robustness with imported robot USDs.
-        # object_position = ObsTerm(func=mdp.root_pos_w, params={"asset_cfg": SceneEntityCfg("object")})
+        object_position = ObsTerm(func=mdp.root_pos_w, params={"asset_cfg": SceneEntityCfg("object")})
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
         actions = ObsTerm(func=mdp.last_action)
 
@@ -186,7 +186,7 @@ class EventCfg:
         mode="reset",
         params={
             # Keep object resets in a safer tabletop region to reduce startup collision kicks.
-            "pose_range": {"x": (0.1, 0.7), "y": (-0.4, 0), "z": (0.0, 0.0)},
+            "pose_range": {"x": (-0.5, 0.5), "y": (-0.2, 0.2), "z": (0.0, 0.0)},
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object", body_names="Object"),
         },
@@ -197,7 +197,7 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.2}, weight=1e1)
+    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.2}, weight=0.4)
 
     # Reward for contact between the end-effector and the object
     # ee_object_contact = RewTerm(
@@ -205,7 +205,7 @@ class RewardsCfg:
     #     params={
     #         "sensor_cfg": SceneEntityCfg(
     #             "ee_object_contact",
-    #             body_names=["finger1", "finger2"],
+    #             body_names=["wrist_roll", "finger1", "finger2"],
     #         ),
     #         "threshold": 1.0,
     #         "force_shaping_scale": 25.0,
@@ -234,15 +234,16 @@ class RewardsCfg:
     # table_collision = RewTerm(
     #     func=mdp.undesired_contacts,
     #     params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*"), "threshold": 1.0},
-    #     weight=-1,
+    #     weight=-0.1,
     # )
-    
+
     # Discourage dragging/sliding: penalize block-table contact force.
     # block_table_contact = RewTerm(
     #     func=mdp.undesired_contacts,
     #     params={"sensor_cfg": SceneEntityCfg("object_contact_forces", body_names=".*"), "threshold": 1.0},
     #     weight=-0.05,
     # )
+
 
     # Static lift reward
     # lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.02}, weight=100.0)
@@ -251,7 +252,7 @@ class RewardsCfg:
     lifting_object = RewTerm(
         func=mdp.object_is_lifted_when_ee_near,
         params={"minimal_height": 0.02, "ee_distance_threshold": 0.12},
-        weight=25.0,
+        weight=15.0,
     )
 
     # Ramp up the reward for lifting the object as it gets higher
@@ -267,19 +268,26 @@ class RewardsCfg:
     #     params={"minimal_height": 0.02, "max_height": 0.10, "ee_distance_threshold": 0.12},
     #     weight=100.0,
     # )
+    #     
+
+    object_goal_tracking_breadcrumb = RewTerm(
+        func=mdp.object_goal_distance,
+        params={"std": 0.3, "minimal_height": 0.02, "command_name": "object_pose"},
+        weight=4.0,
+    )
 
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
         params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose"},
-        weight=100.0,
+        weight=16.0,
     )
     
     object_goal_tracking_fine_grained = RewTerm(
         func=mdp.object_goal_distance,
         params={"std": 0.05, "minimal_height": 0.04, "command_name": "object_pose"},
-        weight=50.0,
+        weight=5.0,
     )
-    
+
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
@@ -288,6 +296,7 @@ class RewardsCfg:
         weight=-1e-4,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
+
 
 @configclass
 class TerminationsCfg:
@@ -316,19 +325,21 @@ class CurriculumCfg:
     #     func=mdp.modify_reward_weight, params={"term_name": "ee_object_contact", "weight": 3.0, "num_steps": 12000}
     # )
 
-    # lifting_object = CurrTerm(  
-    #     func=mdp.modify_reward_weight, params={"term_name": "lifting_object", "weight": 10.0, "num_steps": 1000 * 24}
-    # )
-
     action_rate = CurrTerm(
         func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -1e-1, "num_steps": 10000}
     )
 
-    joint_vel = CurrTerm(
-        func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000}
+    joint_vel_10k = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-3, "num_steps": 10000}
     )
 
+    joint_vel_20k = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-2, "num_steps": 20000}
+    )
 
+    joint_vel_40k = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 40000}
+    )
 ##
 # Environment configuration
 ##
