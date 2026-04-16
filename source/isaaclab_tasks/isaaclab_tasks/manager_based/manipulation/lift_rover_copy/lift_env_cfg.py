@@ -197,7 +197,7 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.2}, weight=0.4)
+    reaching_object = RewTerm(func=mdp.object_ee_distance, params={"std": 0.2}, weight=1)
 
     # Reward for contact between the end-effector and the object
     # ee_object_contact = RewTerm(
@@ -249,11 +249,38 @@ class RewardsCfg:
     # lifting_object = RewTerm(func=mdp.object_is_lifted, params={"minimal_height": 0.02}, weight=100.0)
     
     # Static lift reward gated by end-effector proximity.
+    # lifting_object = RewTerm(
+    #     func=mdp.object_is_lifted_when_ee_near,
+    #     params={
+    #         "minimal_height": 0.02, 
+    #         "ee_distance_threshold": 0.12,
+    #     },
+    #     weight=15.0,
+    # )
+
     lifting_object = RewTerm(
-        func=mdp.object_is_lifted_when_ee_near,
-        params={"minimal_height": 0.02, "ee_distance_threshold": 0.12},
+        func=mdp.object_is_lifted_when_ee_contact_sustained,
+        params={
+            "minimal_height": 0.02,
+            "ee_distance_threshold": 0.12,
+            "contact_force_threshold": 0.8,
+            "min_consecutive_steps": 5,
+            "sensor_cfg": SceneEntityCfg("ee_object_contact", body_names=["finger1", "finger2"]),
+        },
         weight=15.0,
     )
+    
+    # Static lift progress reward gated by finger-object contact.
+    # lifting_object = RewTerm(
+    #     func=mdp.object_lift_height_progress_when_ee_contact,
+    #     params={
+    #         "minimal_height": 0.02,
+    #         "max_height": 0.10,
+    #         "contact_force_threshold": 0.8,
+    #         "sensor_cfg": SceneEntityCfg("ee_object_contact", body_names=["finger1", "finger2"]),
+    #     },
+    #     weight=15.0,
+    # )
 
     # Ramp up the reward for lifting the object as it gets higher
     # lifting_object = RewTerm(
@@ -295,6 +322,12 @@ class RewardsCfg:
         func=mdp.joint_vel_l2,
         weight=-1e-4,
         params={"asset_cfg": SceneEntityCfg("robot")},
+    )
+
+    object_vel = RewTerm(
+        func=mdp.object_root_lin_vel_l2,
+        weight=-1e-5,
+        params={"asset_cfg": SceneEntityCfg("object")},
     )
 
 
@@ -339,6 +372,18 @@ class CurriculumCfg:
 
     joint_vel_40k = CurrTerm(
         func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 40000}
+    )
+
+    object_vel_10k = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "object_vel", "weight": -1e-4, "num_steps": 10000}
+    )
+
+    object_vel_20k = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "object_vel", "weight": -1e-3, "num_steps": 20000}
+    )
+
+    object_vel_40k = CurrTerm(
+        func=mdp.modify_reward_weight, params={"term_name": "object_vel", "weight": -1e-2, "num_steps": 40000}
     )
 ##
 # Environment configuration
